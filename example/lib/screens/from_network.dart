@@ -1,6 +1,22 @@
+import 'dart:isolate';
+
+import 'package:example/channels.dart';
 import 'package:pod_player/pod_player.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+void changeVideo(List<dynamic> data) {
+  SendPort sendPort = data[0];
+  ChangeVideoParams params = data[1];
+  params.controller.changeVideo(playVideoFrom: params.playVideoFrom);
+}
+
+class ChangeVideoParams {
+  final PodPlayerController controller;
+  final PlayVideoFrom playVideoFrom;
+
+  ChangeVideoParams(this.controller, this.playVideoFrom);
+}
 
 class PlayVideoFromNetwork extends StatefulWidget {
   const PlayVideoFromNetwork({Key? key}) : super(key: key);
@@ -13,15 +29,36 @@ class _PlayVideoFromAssetState extends State<PlayVideoFromNetwork> {
   late final PodPlayerController controller;
   final videoTextFieldCtr = TextEditingController();
 
+  late Channel current;
+
   @override
   void initState() {
-    controller = PodPlayerController(
-      playVideoFrom: PlayVideoFrom.network(
-        'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4',
-      ),
-    )..initialise();
+    current = channels[0];
+    initPlayer();
     super.initState();
   }
+
+  PlayVideoFrom get playFrom {
+    return PlayVideoFrom.network(
+      current.url,
+      formatHint: VideoFormat.hls,
+    );
+  }
+
+  void initPlayer() {
+    controller = PodPlayerController(
+      playVideoFrom: playFrom,
+    )..initialise();
+  }
+
+  Future<void> change() async {
+    ReceivePort port = ReceivePort();
+    Isolate isolate = await Isolate.spawn<List<dynamic>>(
+        changeVideo, [port.sendPort, ChangeVideoParams(controller, playFrom)]);
+    isolate.kill();
+  }
+
+
 
   @override
   void dispose() {
@@ -53,8 +90,27 @@ class _PlayVideoFromAssetState extends State<PlayVideoFromNetwork> {
                   backgroundColor: Colors.blueGrey,
                 ),
               ),
-              const SizedBox(height: 40),
-              _loadVideoFromUrl()
+              Expanded(
+                child: GridView.count(
+                  shrinkWrap: true,
+                  crossAxisCount: 4,
+                  children: List.generate(
+                    channels.length,
+                    (index) => GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          current = channels[index];
+                          change();
+                        });
+                      },
+                      child: Container(
+                          alignment: Alignment.center,
+                          color: Colors.red,
+                          child: Text(channels[index].name)),
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
